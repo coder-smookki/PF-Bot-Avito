@@ -1,3 +1,4 @@
-aiogram==3.4.1
-aiohttp==3.9.1
-python-dotenv==1.0.0
+# На Windows ставьте Python 3.11, 3.12 или 3.13 (официальный установщик с python.org).
+# Python 3.14: у pydantic-core часто нет готового wheel -> pip пытается собрать из исходников (нужен Rust).
+aiogram==3.26.0
+python-dotenv>=1.0.0

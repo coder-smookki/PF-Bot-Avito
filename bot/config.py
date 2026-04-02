@@ -1,9 +1,12 @@
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import List
 
 from dotenv import load_dotenv
 
+_repo_root = Path(__file__).resolve().parent.parent
+load_dotenv(_repo_root / ".env")
 load_dotenv()
 
 
