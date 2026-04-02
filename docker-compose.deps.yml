@@ -1,0 +1,31 @@
+# Опционально: только PostgreSQL и Redis для локальной разработки (Linux/macOS/WSL).
+# Запуск: docker compose -f docker-compose.deps.yml up -d
+# Приложения поднимаются через PM2 (см. package.json и ecosystem.config.cjs).
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${DB_USERNAME:-pfavito}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-pfavito_secret}
+      POSTGRES_DB: ${DB_DATABASE:-pfavito}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  postgres_data:
+  redis_data:

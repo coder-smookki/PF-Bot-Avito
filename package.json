@@ -1,0 +1,15 @@
+{
+  "name": "pfavito",
+  "private": true,
+  "scripts": {
+    "build": "npm run build --prefix server && npm run build --prefix client && npm run build --prefix admin",
+    "pm2:start": "pm2 start ecosystem.config.cjs",
+    "pm2:stop": "pm2 delete ecosystem.config.cjs",
+    "pm2:reload": "pm2 reload ecosystem.config.cjs",
+    "pm2:logs": "pm2 logs",
+    "pm2:status": "pm2 status"
+  },
+  "devDependencies": {
+    "pm2": "^5.4.3"
+  }
+}
