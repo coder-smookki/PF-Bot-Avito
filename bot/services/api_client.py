@@ -25,7 +25,8 @@ class ApiClient:
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession()
+            # Чтобы POST на API_URL шли через HTTPS_PROXY/HTTP_PROXY (как браузер), если прокси задан в окружении.
+            self._session = aiohttp.ClientSession(trust_env=True)
         return self._session
 
     async def close(self):
