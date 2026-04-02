@@ -27,6 +27,13 @@ class Config:
     api_url: str = field(
         default_factory=lambda: os.getenv("API_URL", "http://server:3000/api")
     )
+    # Явный прокси для Telegram API (http://..., socks5://...). Пусто — aiohttp использует trust_env (HTTPS_PROXY и т.д.).
+    telegram_proxy: str = field(
+        default_factory=lambda: (os.getenv("TELEGRAM_PROXY") or "").strip()
+    )
+    telegram_request_timeout: int = field(
+        default_factory=lambda: int(os.getenv("TELEGRAM_REQUEST_TIMEOUT") or "120")
+    )
     admin_ids: List[int] = field(default_factory=list)
 
     @property
