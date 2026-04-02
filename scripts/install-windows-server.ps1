@@ -4,7 +4,7 @@
     Без Docker и без включения WSL — перезагрузка не требуется.
 
 .DESCRIPTION
-    Скрипт запускать от имени администратора в PowerShell 5.1+.
+    Запускайте из обычного PowerShell: при необходимости откроется UAC и скрипт продолжит с правами администратора.
     Сначала пробует winget; при отсутствии — Chocolatey.
     Опционально: локальные PostgreSQL и Redis (Chocolatey), без перезагрузки.
 
@@ -31,8 +31,6 @@
     .\install-windows-server.ps1 -WithLocalDatabase
 #>
 
-#Requires -RunAsAdministrator
-
 [CmdletBinding()]
 param(
     [switch] $SkipPm2,
@@ -43,6 +41,36 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+function Test-IsAdministrator {
+    $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $p = New-Object Security.Principal.WindowsPrincipal($id)
+    return $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+if (-not (Test-IsAdministrator)) {
+    Write-Host "Нужны права администратора. Подтвердите запрос UAC (Контроль учётных записей)." -ForegroundColor Yellow
+    $argList = @(
+        '-NoProfile'
+        '-ExecutionPolicy'
+        'Bypass'
+        '-File'
+        $PSCommandPath
+    )
+    if ($SkipPm2) { $argList += '-SkipPm2' }
+    if ($SkipNginx) { $argList += '-SkipNginx' }
+    if ($SkipNode) { $argList += '-SkipNode' }
+    if ($UseChocolateyOnly) { $argList += '-UseChocolateyOnly' }
+    if ($WithLocalDatabase) { $argList += '-WithLocalDatabase' }
+    try {
+        $proc = Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList $argList -Wait -PassThru
+        exit $(if ($proc.ExitCode -ne $null) { $proc.ExitCode } else { 0 })
+    } catch {
+        Write-Host "Запуск с повышением отменён или недоступен: $_" -ForegroundColor Red
+        exit 1
+    }
+}
+
 $LogPath = Join-Path $PSScriptRoot "install-windows-server-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
 
 function Write-Log {
