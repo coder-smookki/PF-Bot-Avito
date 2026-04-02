@@ -212,8 +212,16 @@ function Invoke-Psql {
     try {
         $utf8NoBom = New-Object System.Text.UTF8Encoding $false
         [System.IO.File]::WriteAllText($sqlPath, $Sql, $utf8NoBom)
-        & $PsqlExe -U postgres -h 127.0.0.1 -d $Database -v ON_ERROR_STOP=1 -f $sqlPath 2>&1 | ForEach-Object { Write-Log "psql: $_" }
-        if ($LASTEXITCODE -ne 0) { throw "psql завершился с кодом $LASTEXITCODE" }
+        # Важно: не пайпить вывод psql (| ForEach-Object) - в Windows PowerShell 5.x
+        # $LASTEXITCODE тогда относится не к psql, скрипт ложно падает и catch останавливает службу во время CREATE DATABASE.
+        $out = & $PsqlExe -U postgres -h 127.0.0.1 -d $Database -v ON_ERROR_STOP=1 -f $sqlPath 2>&1
+        $exitCode = $LASTEXITCODE
+        foreach ($line in @($out)) {
+            Write-Log "psql: $line"
+        }
+        if ($null -eq $exitCode -or $exitCode -ne 0) {
+            throw "psql завершился с кодом $exitCode"
+        }
     } finally {
         Remove-Item -LiteralPath $sqlPath -Force -ErrorAction SilentlyContinue
     }
@@ -276,20 +284,32 @@ try {
         Write-PostgresLogTail -DataDir $info.DataDir
         throw
     }
-    Start-Sleep -Seconds 5
+    Start-Sleep -Seconds 8
 
-    $sqlReset = @"
-SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$dbNameStrEsc' AND pid <> pg_backend_pid();
-DROP DATABASE IF EXISTS $dbName;
+    Write-Log "Проверка доступа к postgres..."
+    Invoke-Psql -PsqlExe $info.PsqlExe -Sql "SELECT 1 AS ping;" -Database 'postgres'
+
+    $sqlDropDb = "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$dbNameStrEsc' AND pid <> pg_backend_pid();`nDROP DATABASE IF EXISTS $dbName;"
+    Write-Log "Удаление БД $dbName (если есть)..."
+    Invoke-Psql -PsqlExe $info.PsqlExe -Sql $sqlDropDb -Database 'postgres'
+
+    $sqlDropRole = @"
+DO `$`$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '$dbUser') THEN
+    EXECUTE format('REASSIGN OWNED BY %I TO postgres', '$dbUser');
+    EXECUTE format('DROP OWNED BY %I', '$dbUser');
+  END IF;
+END
+`$`$;
 DROP ROLE IF EXISTS $dbUser;
 ALTER USER postgres WITH PASSWORD '$pgAdminEsc';
 CREATE USER $dbUser WITH PASSWORD '$passEsc';
 CREATE DATABASE $dbName OWNER $dbUser;
 GRANT ALL PRIVILEGES ON DATABASE $dbName TO $dbUser;
 "@
-
-    Write-Log "Сброс БД приложения и пароля postgres..."
-    Invoke-Psql -PsqlExe $info.PsqlExe -Sql $sqlReset -Database 'postgres'
+    Write-Log "Роль, пароль postgres, создание БД..."
+    Invoke-Psql -PsqlExe $info.PsqlExe -Sql $sqlDropRole -Database 'postgres'
 
     $sqlGrants = @"
 GRANT ALL ON SCHEMA public TO $dbUser;
@@ -316,8 +336,11 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $dbUser;
     Start-Sleep -Seconds 5
 
     $env:PGPASSWORD = $PostgresAdminPassword
-    & $info.PsqlExe -U postgres -h 127.0.0.1 -d postgres -c "SELECT 1 AS ok;" 2>&1 | ForEach-Object { Write-Log "check: $_" }
+    $chk = & $info.PsqlExe -U postgres -h 127.0.0.1 -d postgres -c "SELECT 1 AS ok;" 2>&1
+    $chkCode = $LASTEXITCODE
+    foreach ($line in @($chk)) { Write-Log "check: $line" }
     Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
+    if ($null -eq $chkCode -or $chkCode -ne 0) { throw "Проверка входа postgres после сброса не прошла (код $chkCode)" }
 
     Write-Log "Готово. Подключение приложения: host=localhost port=5432 user=$dbUser database=$dbName"
     Write-Log "Админ psql: psql -U postgres -h 127.0.0.1 -d postgres (пароль - см. выше / лог)"
