@@ -1,0 +1,103 @@
+# =============================================================================
+# Nginx на Windows Server для ahuito.ru + PM2 (Nest :3000, Next :3001, Admin :3002)
+# =============================================================================
+#
+# Где лежит nginx после Chocolatey: обычно C:\tools\nginx\
+#   nginx.exe           - главный процесс
+#   conf\nginx.conf     - основной конфиг
+#
+# БЫСТРЫЙ СТАРТ (админ PowerShell, из папки nginx):
+#   .\nginx.exe -t                  проверка синтаксиса
+#   Start-Process .\nginx.exe       запуск (или просто .\nginx.exe)
+#   .\nginx.exe -s reload           перечитать конфиг без остановки
+#   .\nginx.exe -s quit            остановка
+#
+# Подключение этого файла:
+#   1) Скопируйте как C:\tools\nginx\conf\ahuito.ru.conf
+#   2) В conf\nginx.conf внутри блока http { } добавьте строку:
+#        include ahuito.ru.conf;
+#   3) Убедитесь, что в nginx.conf НЕТ другого listen 80 default_server,
+#      который конфликтует, или закомментируйте блок server по умолчанию.
+#
+# DNS: A-запись ahuito.ru и www -> IP сервера.
+# Для админки удобен поддомен admin.ahuito.ru (A-запись на тот же IP).
+#
+# В .env на сервере (после сборки client/admin):
+#   NEXT_PUBLIC_API_URL=https://ahuito.ru/api
+#   VITE_API_URL=https://ahuito.ru/api
+#   SERVER_URL=https://ahuito.ru
+#   CORS_ORIGINS=https://ahuito.ru,https://www.ahuito.ru,https://admin.ahuito.ru
+#
+# HTTPS: на Windows часто используют win-acme (WACS) или сертификат вручную;
+# ниже только HTTP :80 — после получения cert добавьте listen 443 ssl и пути к pem.
+# =============================================================================
+
+upstream pfavito_api {
+    server 127.0.0.1:3000;
+    keepalive 8;
+}
+
+upstream pfavito_next {
+    server 127.0.0.1:3001;
+    keepalive 8;
+}
+
+upstream pfavito_admin {
+    server 127.0.0.1:3002;
+    keepalive 8;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ahuito.ru www.ahuito.ru;
+
+    client_max_body_size 25m;
+
+    location /api/ {
+        proxy_pass http://pfavito_api;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+    }
+
+    location /uploads/ {
+        proxy_pass http://pfavito_api;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        proxy_pass http://pfavito_next;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name admin.ahuito.ru;
+
+    location / {
+        proxy_pass http://pfavito_admin;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
