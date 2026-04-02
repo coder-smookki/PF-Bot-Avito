@@ -11,7 +11,6 @@ import { WalletModule } from './wallet/wallet.module';
 import { PaymentsModule } from './payments/payments.module';
 import { AdminModule } from './admin/admin.module';
 import { NotificationsModule } from './notifications/notifications.module';
-import { UploadsModule } from './uploads/uploads.module';
 
 @Module({
   imports: [
@@ -44,7 +43,6 @@ import { UploadsModule } from './uploads/uploads.module';
     PaymentsModule,
     AdminModule,
     NotificationsModule,
-    UploadsModule,
   ],
 })
 export class AppModule {}
