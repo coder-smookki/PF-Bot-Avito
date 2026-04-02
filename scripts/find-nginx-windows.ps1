@@ -31,7 +31,23 @@ foreach ($p in $candidates) {
     }
 }
 
-Write-Host "`n=== winget (if installed via winget) ===" -ForegroundColor Cyan
+Write-Host "`n=== WinGet package folder (typical: conf next to nginx.exe) ===" -ForegroundColor Cyan
+$wgPackages = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
+if (Test-Path -LiteralPath $wgPackages) {
+    Get-ChildItem -LiteralPath $wgPackages -Recurse -Depth 8 -Filter 'nginx.exe' -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty FullName -Unique |
+        ForEach-Object {
+            Write-Host "FOUND: $_"
+            $root = Split-Path $_ -Parent
+            Write-Host "  conf:  $root\conf\nginx.conf"
+            Write-Host "  cd `"$root`""
+            Write-Host "  .\nginx.exe -t"
+        }
+} else {
+    Write-Host "(no $wgPackages)"
+}
+
+Write-Host "`n=== winget list ===" -ForegroundColor Cyan
 if (Get-Command winget -ErrorAction SilentlyContinue) {
     winget list --name nginx 2>$null
 }
