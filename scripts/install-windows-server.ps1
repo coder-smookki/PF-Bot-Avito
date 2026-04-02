@@ -1,11 +1,11 @@
-<#
+﻿<#
 .SYNOPSIS
     Установка Nginx, Node.js (LTS) и PM2 на Windows Server / Windows 10/11.
-    Без Docker и без включения WSL — перезагрузка не требуется.
+    Без Docker и без включения WSL - перезагрузка не требуется.
 
 .DESCRIPTION
     Запускайте из обычного PowerShell: при необходимости откроется UAC и скрипт продолжит с правами администратора.
-    Сначала пробует winget; при отсутствии — Chocolatey.
+    Сначала пробует winget; при отсутствии - Chocolatey.
     Опционально: локальные PostgreSQL и Redis (Chocolatey), без перезагрузки.
 
 .PARAMETER SkipPm2
@@ -141,7 +141,7 @@ function Ensure-Pm2Global {
         return
     }
     if (-not (Test-Command npm)) {
-        Write-Log "npm не найден — установите Node.js и повторите запуск для PM2." 'WARN'
+        Write-Log "npm не найден - установите Node.js и повторите запуск для PM2." 'WARN'
         return
     }
     Write-Log "Глобальная установка PM2 (npm install -g pm2)..."
@@ -160,12 +160,12 @@ Write-Log "ОС: $([System.Environment]::OSVersion.VersionString)"
 
 $hasWinget = (-not $UseChocolateyOnly) -and (Test-Command winget)
 if ($hasWinget) {
-    Write-Log "Будет использован winget (при сбое — Chocolatey)."
+    Write-Log "Будет использован winget (при сбое - Chocolatey)."
 } else {
     if ($UseChocolateyOnly) {
         Write-Log "Режим только Chocolatey."
     } else {
-        Write-Log "winget не найден — будет использован Chocolatey." 'WARN'
+        Write-Log "winget не найден - будет использован Chocolatey." 'WARN'
     }
     Ensure-Chocolatey
 }
@@ -190,7 +190,7 @@ if (-not $SkipNode) {
     }
 }
 
-# PM2 (глобально — удобно для `pm2 startup` на сервере)
+# PM2 (глобально; удобно для команды pm2 startup на сервере)
 if (-not $SkipPm2) {
     Ensure-Pm2Global
 }
