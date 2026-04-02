@@ -1,3 +1,6 @@
+-- Полный сброс пароля postgres + пересоздание роли/БД из .env на Windows:
+--   см. scripts/reset-postgres-windows.ps1 (запуск от администратора).
+--
 -- Выполнить от суперпользователя PostgreSQL (обычно postgres) на Windows Server.
 -- Пример (путь к psql зависит от версии, 16 — пример):
 --   "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -f postgres-init-pfavito.sql
