@@ -61,7 +61,8 @@ async def main():
         logger.error(
             "Сеть Telegram недоступна (api.telegram.org). Варианты: VPN; прокси в .env "
             "TELEGRAM_PROXY= socks5://... или http://...; или системные HTTP_PROXY/HTTPS_PROXY. "
-            "Детали: %s",
+            "При CERTIFICATE_VERIFY_FAILED за прокси: TELEGRAM_SSL_CA_BUNDLE=... или "
+            "TELEGRAM_PROXY_SSL_INSECURE=1. Детали: %s",
             e,
         )
         raise
