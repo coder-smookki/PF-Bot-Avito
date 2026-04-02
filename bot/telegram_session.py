@@ -1,22 +1,14 @@
-"""Сессия aiohttp для Telegram: прокси, trust_env, увеличенный ssl_handshake_timeout (Python 3.14 / «висящий» SSL)."""
+"""Сессия Telegram для aiogram 3.26+: только параметры AiohttpSession (proxy + timeout float)."""
 
 from __future__ import annotations
 
 import logging
+import os
 from typing import Optional
 
-import aiohttp
-from aiohttp import ClientTimeout, TCPConnector
 from aiogram.client.session.aiohttp import AiohttpSession
 
 logger = logging.getLogger(__name__)
-
-
-def _tcp_connector(ssl_handshake_timeout: float) -> TCPConnector:
-    try:
-        return TCPConnector(ssl_handshake_timeout=ssl_handshake_timeout)
-    except TypeError:
-        return TCPConnector()
 
 
 def create_telegram_session(
@@ -25,44 +17,26 @@ def create_telegram_session(
     timeout_total: int = 120,
 ) -> AiohttpSession:
     """
-    TELEGRAM_PROXY: http://user:pass@host:port, https://..., socks5://host:port (нужен пакет aiohttp-socks).
-    Без прокси: учитываются переменные окружения HTTP_PROXY / HTTPS_PROXY (trust_env=True).
+    TELEGRAM_PROXY: http(s)://user:pass@host:port или socks5://... (нужен пакет aiohttp-socks).
+    aiogram 3.26 сам поднимает ProxyConnector по URL; нельзя передавать connector/trust_env в AiohttpSession.
+    Если TELEGRAM_PROXY пуст — подставляется HTTPS_PROXY / HTTP_PROXY из окружения.
     """
-    proxy = (proxy or "").strip() or None
-    t = max(30, int(timeout_total))
-    timeout = ClientTimeout(
-        total=t,
-        connect=min(60, t),
-        sock_connect=min(90, t),
-        sock_read=t,
-    )
-    ssl_hs = float(min(120, t))
+    p = (proxy or "").strip()
+    if not p:
+        p = (os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY") or "").strip()
+    proxy_final = p or None
 
-    common_kw: dict = {
-        "timeout": timeout,
-        "trust_env": True,
-    }
+    t = float(max(30, int(timeout_total)))
 
-    if proxy:
-        pl = proxy.lower()
+    if proxy_final:
+        pl = proxy_final.lower()
         if pl.startswith("socks5://") or pl.startswith("socks4://"):
-            try:
-                from aiohttp_socks import ProxyConnector
-            except ImportError as e:
-                raise ImportError(
-                    "Для SOCKS-прокси установите: pip install aiohttp-socks"
-                ) from e
-            # from_url: параметры зависят от версии aiohttp-socks; при необходимости расширьте вручную.
-            connector = ProxyConnector.from_url(proxy)
-            logger.info("Telegram: используется SOCKS-прокси")
-            return AiohttpSession(connector=connector, **common_kw)
+            logger.info("Telegram: SOCKS-прокси (aiohttp-socks)")
+        else:
+            logger.info("Telegram: HTTP(S)-прокси")
+        return AiohttpSession(proxy=proxy_final, timeout=t)
 
-        logger.info("Telegram: используется HTTP(S)-прокси из TELEGRAM_PROXY")
-        connector = _tcp_connector(ssl_hs)
-        return AiohttpSession(connector=connector, proxy=proxy, **common_kw)
-
-    connector = _tcp_connector(ssl_hs)
     logger.info(
-        "Telegram: прямое подключение (если api.telegram.org недоступен — задайте TELEGRAM_PROXY или HTTPS_PROXY)"
+        "Telegram: прямое подключение к api.telegram.org (или задайте TELEGRAM_PROXY / HTTPS_PROXY)"
     )
-    return AiohttpSession(connector=connector, **common_kw)
+    return AiohttpSession(timeout=t)
