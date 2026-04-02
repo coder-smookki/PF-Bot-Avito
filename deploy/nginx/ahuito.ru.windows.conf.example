@@ -2,18 +2,27 @@
 # Nginx на Windows Server для ahuito.ru + PM2 (Nest :3000, Next :3001, Admin :3002)
 # =============================================================================
 #
-# Где лежит nginx после Chocolatey: обычно C:\tools\nginx\
-#   nginx.exe           - главный процесс
-#   conf\nginx.conf     - основной конфиг
+# Где лежит nginx (на Windows путь НЕ всегда C:\tools\nginx):
+#   Chocolatey:  C:\tools\nginx\
+#   winget / MSI: часто C:\Program Files\nginx\  или другое (смотрите установщик)
+# Найти в PowerShell:
+#   .\scripts\find-nginx-windows.ps1
+#   или: Get-Command nginx; where.exe nginx
+# Если папки нет - установите (админ):
+#   choco install nginx -y
+#   winget install -e --id nginxinc.nginx
 #
-# БЫСТРЫЙ СТАРТ (админ PowerShell, из папки nginx):
+#   nginx.exe           - главный процесс
+#   conf\nginx.conf     - основной конфиг (рядом с nginx.exe в подпапке conf)
+#
+# БЫСТРЫЙ СТАРТ (админ PowerShell, из папки, где лежит nginx.exe):
 #   .\nginx.exe -t                  проверка синтаксиса
 #   Start-Process .\nginx.exe       запуск (или просто .\nginx.exe)
 #   .\nginx.exe -s reload           перечитать конфиг без остановки
 #   .\nginx.exe -s quit            остановка
 #
 # Подключение этого файла:
-#   1) Скопируйте как C:\tools\nginx\conf\ahuito.ru.conf
+#   1) Скопируйте как <папка_nginx>\conf\ahuito.ru.conf
 #   2) В conf\nginx.conf внутри блока http { } добавьте строку:
 #        include ahuito.ru.conf;
 #   3) Убедитесь, что в nginx.conf НЕТ другого listen 80 default_server,
