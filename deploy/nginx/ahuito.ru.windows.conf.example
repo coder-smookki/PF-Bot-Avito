@@ -39,6 +39,15 @@
 #
 # HTTPS: на Windows часто используют win-acme (WACS) или сертификат вручную;
 # ниже только HTTP :80 — после получения cert добавьте listen 443 ssl и пути к pem.
+#
+# --- 502 Bad Gateway: частые причины ---
+# 1) Перепутаны upstream: pfavito_api = ТОЛЬКО порт Nest (по умолчанию 3000),
+#    pfavito_next = ТОЛЬКО порт Next (PM2: 3001). НЕ ставьте API на 3001 и сайт на 3000.
+# 2) На порту никто не слушает. Проверка:
+#      curl http://127.0.0.1:3000/api
+#      curl http://127.0.0.1:3001/
+# 3) next dev по умолчанию = порт 3000 (как Nest). Запускайте Nest на 3000, фронт: npm run dev:nginx (порт 3001).
+# 4) Host localhost попадает в блок server_name localhost в nginx.conf, не в ahuito.ru. Проверка: Host ahuito.ru или запись в hosts.
 # =============================================================================
 
 upstream pfavito_api {
