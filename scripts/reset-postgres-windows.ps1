@@ -127,9 +127,51 @@ function Get-PostgreSQLServiceInfo {
     }
 }
 
+function Read-PgHbaRawNoBom {
+    param([string] $HbaPath)
+    $bytes = [System.IO.File]::ReadAllBytes($HbaPath)
+    $off = 0
+    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+        $off = 3
+    }
+    $enc = New-Object System.Text.UTF8Encoding $false
+    return $enc.GetString($bytes, $off, $bytes.Length - $off)
+}
+
+function Write-PgHbaUtf8NoBom {
+    param([string] $Path, [string] $Text)
+    $enc = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($Path, $Text, $enc)
+}
+
+function Write-PgHbaLinesNoBom {
+    param([string] $Path, [string[]] $Lines)
+    $enc = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllLines($Path, $Lines, $enc)
+}
+
+function Write-PostgresLogTail {
+    param([string] $DataDir, [int] $Lines = 40)
+    $logDir = Join-Path $DataDir 'log'
+    if (-not (Test-Path -LiteralPath $logDir)) {
+        Write-Log "Каталог log не найден: $logDir"
+        return
+    }
+    $latest = Get-ChildItem -LiteralPath $logDir -Filter '*.log' -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+    if (-not $latest) {
+        Write-Log "В $logDir нет .log файлов."
+        return
+    }
+    Write-Log "Последние строки $($latest.Name):"
+    Get-Content -LiteralPath $latest.FullName -Tail $Lines -Encoding UTF8 -ErrorAction SilentlyContinue |
+        ForEach-Object { Write-Log "  $_" }
+}
+
 function Add-TrustBlock {
     param([string] $HbaPath)
-    $raw = Get-Content -LiteralPath $HbaPath -Raw -Encoding UTF8
+    $raw = Read-PgHbaRawNoBom -HbaPath $HbaPath
     if ($raw -match [regex]::Escape($TrustBegin)) {
         Write-Log "В pg_hba.conf уже есть блок trust скрипта - пропуск добавления."
         return
@@ -141,9 +183,9 @@ host    all             all             ::1/128                 trust
 $TrustEnd
 
 "@
-    $utf8Bom = New-Object System.Text.UTF8Encoding $true
-    [System.IO.File]::WriteAllText($HbaPath, $block + $raw, $utf8Bom)
-    Write-Log "В начало pg_hba.conf добавлен временный trust для localhost."
+    # PostgreSQL не принимает UTF-8 BOM в начале pg_hba.conf - только UTF-8 без BOM
+    Write-PgHbaUtf8NoBom -Path $HbaPath -Text ($block + $raw)
+    Write-Log "В начало pg_hba.conf добавлен временный trust для localhost (UTF-8 без BOM)."
 }
 
 function Remove-TrustBlock {
@@ -156,8 +198,7 @@ function Remove-TrustBlock {
         if ($line -eq $TrustEnd) { $skip = $false; continue }
         if (-not $skip) { $out.Add($line) | Out-Null }
     }
-    $utf8Bom = New-Object System.Text.UTF8Encoding $true
-    [System.IO.File]::WriteAllLines($HbaPath, $out, $utf8Bom)
+    Write-PgHbaLinesNoBom -Path $HbaPath -Lines ($out.ToArray())
     Write-Log "Блок временного trust удалён из pg_hba.conf."
 }
 
@@ -219,7 +260,7 @@ Write-Log "Служба: $($info.ServiceName), data: $($info.DataDir)"
 try {
     Write-Log "Остановка службы..."
     Stop-Service -Name $info.ServiceName -Force -ErrorAction Stop
-    Start-Sleep -Seconds 2
+    Start-Sleep -Seconds 4
 
     $hbaBackup = "$($info.HbaPath).bak-$(Get-Date -Format 'yyyyMMddHHmmss')"
     Copy-Item -LiteralPath $info.HbaPath -Destination $hbaBackup -Force
@@ -228,8 +269,14 @@ try {
     Add-TrustBlock -HbaPath $info.HbaPath
 
     Write-Log "Запуск службы..."
-    Start-Service -Name $info.ServiceName -ErrorAction Stop
-    Start-Sleep -Seconds 3
+    try {
+        Start-Service -Name $info.ServiceName -ErrorAction Stop
+    } catch {
+        Write-Log "Start-Service: $_"
+        Write-PostgresLogTail -DataDir $info.DataDir
+        throw
+    }
+    Start-Sleep -Seconds 5
 
     $sqlReset = @"
 SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$dbNameStrEsc' AND pid <> pg_backend_pid();
@@ -254,13 +301,19 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $dbUser;
 
     Write-Log "Остановка службы для восстановления pg_hba..."
     Stop-Service -Name $info.ServiceName -Force
-    Start-Sleep -Seconds 2
+    Start-Sleep -Seconds 4
 
     Remove-TrustBlock -HbaPath $info.HbaPath
 
     Write-Log "Запуск службы (обычная проверка паролей)..."
-    Start-Service -Name $info.ServiceName
-    Start-Sleep -Seconds 2
+    try {
+        Start-Service -Name $info.ServiceName -ErrorAction Stop
+    } catch {
+        Write-Log "Start-Service: $_"
+        Write-PostgresLogTail -DataDir $info.DataDir
+        throw
+    }
+    Start-Sleep -Seconds 5
 
     $env:PGPASSWORD = $PostgresAdminPassword
     & $info.PsqlExe -U postgres -h 127.0.0.1 -d postgres -c "SELECT 1 AS ok;" 2>&1 | ForEach-Object { Write-Log "check: $_" }
