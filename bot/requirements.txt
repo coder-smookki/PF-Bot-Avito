@@ -1,4 +1,6 @@
-# На Windows ставьте Python 3.11, 3.12 или 3.13 (официальный установщик с python.org).
-# Python 3.14: у pydantic-core часто нет готового wheel -> pip пытается собрать из исходников (нужен Rust).
+# aiogram 3.26 требует pydantic<2.13. Для Python 3.14 на Windows явно ставим pydantic-core
+# с готовым wheel (иначе pip тянет старый core и пытается собрать из исходников — нужен Rust).
 aiogram==3.26.0
+pydantic==2.12.5
+pydantic-core==2.41.5
 python-dotenv>=1.0.0
