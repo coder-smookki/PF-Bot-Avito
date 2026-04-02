@@ -202,6 +202,35 @@ function Remove-TrustBlock {
     Write-Log "Блок временного trust удалён из pg_hba.conf."
 }
 
+function Invoke-PsqlProcess {
+    param(
+        [string] $PsqlExe,
+        [string[]] $ArgumentList
+    )
+    $stdOut = [System.IO.Path]::GetTempFileName()
+    $stdErr = [System.IO.Path]::GetTempFileName()
+    try {
+        # Start-Process + ExitCode: надёжно на Windows; & psql + $LASTEXITCODE часто ломается при 2>&1 в переменную.
+        $proc = Start-Process -FilePath $PsqlExe -ArgumentList $ArgumentList `
+            -Wait -PassThru -NoNewWindow `
+            -RedirectStandardOutput $stdOut -RedirectStandardError $stdErr
+        $exitCode = $proc.ExitCode
+        foreach ($path in @($stdOut, $stdErr)) {
+            if (Test-Path -LiteralPath $path) {
+                Get-Content -LiteralPath $path -Encoding UTF8 -ErrorAction SilentlyContinue | ForEach-Object {
+                    $t = $_.Trim()
+                    if ($t -ne '') { Write-Log "psql: $t" }
+                }
+            }
+        }
+        if ($null -eq $exitCode -or $exitCode -ne 0) {
+            throw "psql завершился с кодом $exitCode"
+        }
+    } finally {
+        Remove-Item -LiteralPath $stdOut, $stdErr -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Invoke-Psql {
     param(
         [string] $PsqlExe,
@@ -211,17 +240,18 @@ function Invoke-Psql {
     $sqlPath = Join-Path $env:TEMP "pfavito-pg-$(Get-Random).sql"
     try {
         $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-        [System.IO.File]::WriteAllText($sqlPath, $Sql, $utf8NoBom)
-        # Важно: не пайпить вывод psql (| ForEach-Object) - в Windows PowerShell 5.x
-        # $LASTEXITCODE тогда относится не к psql, скрипт ложно падает и catch останавливает службу во время CREATE DATABASE.
-        $out = & $PsqlExe -U postgres -h 127.0.0.1 -d $Database -v ON_ERROR_STOP=1 -f $sqlPath 2>&1
-        $exitCode = $LASTEXITCODE
-        foreach ($line in @($out)) {
-            Write-Log "psql: $line"
-        }
-        if ($null -eq $exitCode -or $exitCode -ne 0) {
-            throw "psql завершился с кодом $exitCode"
-        }
+        # NOTICE «база не существует» при DROP IF EXISTS — не ошибка; убираем шум из лога.
+        $sqlWrapped = "SET client_min_messages = WARNING;`r`n" + $Sql
+        [System.IO.File]::WriteAllText($sqlPath, $sqlWrapped, $utf8NoBom)
+        $argList = @(
+            '-U', 'postgres',
+            '-h', '127.0.0.1',
+            '-d', $Database,
+            '-v', 'ON_ERROR_STOP=1',
+            '-X',
+            '-f', $sqlPath
+        )
+        Invoke-PsqlProcess -PsqlExe $PsqlExe -ArgumentList $argList
     } finally {
         Remove-Item -LiteralPath $sqlPath -Force -ErrorAction SilentlyContinue
     }
@@ -336,11 +366,18 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $dbUser;
     Start-Sleep -Seconds 5
 
     $env:PGPASSWORD = $PostgresAdminPassword
-    $chk = & $info.PsqlExe -U postgres -h 127.0.0.1 -d postgres -c "SELECT 1 AS ok;" 2>&1
-    $chkCode = $LASTEXITCODE
-    foreach ($line in @($chk)) { Write-Log "check: $line" }
-    Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
-    if ($null -eq $chkCode -or $chkCode -ne 0) { throw "Проверка входа postgres после сброса не прошла (код $chkCode)" }
+    try {
+        $chkArgs = @(
+            '-U', 'postgres',
+            '-h', '127.0.0.1',
+            '-d', 'postgres',
+            '-X',
+            '-c', 'SELECT 1 AS ok;'
+        )
+        Invoke-PsqlProcess -PsqlExe $info.PsqlExe -ArgumentList $chkArgs
+    } finally {
+        Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
+    }
 
     Write-Log "Готово. Подключение приложения: host=localhost port=5432 user=$dbUser database=$dbName"
     Write-Log "Админ psql: psql -U postgres -h 127.0.0.1 -d postgres (пароль - см. выше / лог)"
